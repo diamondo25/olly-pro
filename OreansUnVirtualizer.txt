@@ -1,0 +1,57 @@
+﻿Used calls
+.idata:1033C67C ; Imports from OLLYDBG.EXE
+.idata:1033C67C ;
+.idata:1033C67C                 extrn __imp_OLLYDBG_90:dword
+.idata:1033C67C                                         ; DATA XREF: _Pluginreadstringfromini↑r
+.idata:1033C680                 extrn __imp_OLLYDBG_88:dword
+.idata:1033C680                                         ; DATA XREF: _Plugingetvalue↑r
+.idata:1033C684                 extrn __imp_OLLYDBG_100:dword
+.idata:1033C684                                         ; DATA XREF: _Quicktablewindow↑r
+.idata:1033C688                 extrn __imp_OLLYDBG_38:dword
+.idata:1033C688                                         ; DATA XREF: _Finddecode↑r
+.idata:1033C68C                 extrn __imp_OLLYDBG_31:dword
+.idata:1033C68C                                         ; DATA XREF: _Disasm↑r
+.idata:1033C690                 extrn __imp_OLLYDBG_46:dword
+.idata:1033C690                                         ; DATA XREF: _Findname↑r
+.idata:1033C694                 extrn __imp_OLLYDBG_113:dword
+.idata:1033C694                                         ; DATA XREF: _Tablefunction↑r
+.idata:1033C698                 extrn __imp_OLLYDBG_71:dword
+.idata:1033C698                                         ; DATA XREF: _Getsortedbyselection↑r
+.idata:1033C69C                 extrn __imp_OLLYDBG_27:dword
+.idata:1033C69C                                         ; DATA XREF: _Deletesorteddata↑r
+.idata:1033C6A0                 extrn __imp_OLLYDBG_87:dword
+.idata:1033C6A0                                         ; DATA XREF: _Painttable↑r
+.idata:1033C6A4                 extrn __imp_OLLYDBG_28:dword
+.idata:1033C6A4                                         ; DATA XREF: _Deletesorteddatarange↑r
+.idata:1033C6A8                 extrn __imp_OLLYDBG_1:dword
+.idata:1033C6A8                                         ; DATA XREF: _Addsorteddata↑r
+.idata:1033C6AC                 extrn __imp_OLLYDBG_114:dword
+.idata:1033C6AC                                         ; DATA XREF: _Unregisterpluginclass↑r
+.idata:1033C6B0                 extrn __imp_OLLYDBG_12:dword
+.idata:1033C6B0                                         ; DATA XREF: _Createsorteddata↑r
+.idata:1033C6B4                 extrn __imp_OLLYDBG_104:dword
+.idata:1033C6B4                                         ; DATA XREF: _Registerpluginclass↑r
+.idata:1033C6B8                 extrn __imp_OLLYDBG_30:dword
+.idata:1033C6B8                                         ; DATA XREF: _Destroysorteddata↑r
+.idata:1033C6BC                 extrn __imp_OLLYDBG_2:dword
+.idata:1033C6BC                                         ; DATA XREF: _Addtolist↑r
+.idata:1033C6C0                 extrn __imp_OLLYDBG_89:dword
+.idata:1033C6C0                                         ; DATA XREF: _Pluginreadintfromini↑r
+.idata:1033C6C4                 extrn __imp_OLLYDBG_92:dword
+.idata:1033C6C4                                         ; DATA XREF: _Pluginwriteinttoini↑r
+.idata:1033C6C8                 extrn __imp_OLLYDBG_44:dword
+.idata:1033C6C8                                         ; DATA XREF: _Findmemory↑r Y
+.idata:1033C6CC                 extrn __imp_OLLYDBG_45:dword
+.idata:1033C6CC                                         ; DATA XREF: _Findmodule↑r
+.idata:1033C6D0                 extrn __imp_OLLYDBG_78:dword
+.idata:1033C6D0                                         ; DATA XREF: _Infoline↑r
+.idata:1033C6D4                 extrn __imp_OLLYDBG_107:dword
+.idata:1033C6D4                                         ; DATA XREF: _Setcpu↑r Y
+.idata:1033C6D8                 extrn __imp_OLLYDBG_117:dword
+.idata:1033C6D8                                         ; DATA XREF: _Writememory↑r Y
+.idata:1033C6DC                 extrn __imp_OLLYDBG_54:dword
+.idata:1033C6DC                                         ; DATA XREF: _Flash↑r
+.idata:1033C6E0                 extrn __imp_OLLYDBG_98:dword
+.idata:1033C6E0                                         ; DATA XREF: _Progress↑r
+.idata:1033C6E4                 extrn __imp_OLLYDBG_101:dword
+.idata:1033C6E4                                         ; DATA XREF: _Readmemory↑r Y

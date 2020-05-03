@@ -1,0 +1,5 @@
+*.user
+x64/
+Debug/
+Win32
+.vs/
