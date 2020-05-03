@@ -1,12 +1,33 @@
 #include "stdafx.h"
-#include "Plugin.h"
-
+#include "OllyPlugin.h"
 
 // Fix for missing Isprefix inside Plugin.h, but exported by olly inside the Ollydbg.def file
 extc void cdecl Isprefix(void) {}
 
+/*
+The Addtolist function adds single line of ASCII text, up to TEXTLEN characters long, to the log window.
 
-extc void    cdecl Addtolist(long addr, int highlight, char* format, ...) {}
+void Addtolist(long addr,int highlight,char *format,...);
+
+Parameters:
+
+addr - memory address associated with log line. By doubleclicking the line in log window, one can instantly jump to the corresponding code or data in CPU;
+
+highlight - color of text:
+
+0	standard color (black in black on white color scheme);
+1	highlighted (red);
+-1	grayed (gray);
+format - format string (as in call to printf), followed by optional arguments.
+*/
+extc void    cdecl Addtolist(long addr, int highlight, char* format, ...) {
+	msg("[%08X] ", addr);
+
+	va_list va;
+	va_start(va, format);
+	vmsg(format, va);
+	msg("\n");
+}
 extc void    cdecl Updatelist(void) {}
 extc HWND    cdecl Createlistwindow(void) { return 0; }
 
@@ -22,7 +43,7 @@ format - format string (as in call to printf), followed by optional arguments.
 extc void    cdecl Error(char* format, ...) {
 	va_list va;
 	va_start(va, format);
-	verror(format, va);
+	vinfo(format, va);
 }
 
 /*
@@ -40,6 +61,7 @@ extc void    cdecl Message(ulong addr, char* format, ...) {
 	va_list va;
 	va_start(va, format);
 	vmsg(format, va);
+	msg("\n");
 }
 /*
 Displays message on the bottom of main OllyDbg window. If format is NULL, currently displayed message will be removed. Call to Infoline removes flash and progress bar from the bottom line.
@@ -55,6 +77,7 @@ extc void    cdecl Infoline(char* format, ...) {
 	va_list va;
 	va_start(va, format);
 	vmsg(format, va);
+	msg("\n");
 }
 /*
 Displays progress bar on the bottom of main OllyDbg window. Bar will contain formatted text with attached percent of execution. Formatted text may contain dollar sign '$', in this case persent of execution, enclosed in dashes, is inserted instead of dollra sign. If promille is 0, function closes progress bar restores previously displayed message. Calls to Message, Infoline and Flash also will close progress bar.
@@ -79,7 +102,13 @@ Parameters:
 format - format string (as in call to printf), followed by optional arguments.
 
 */
-extc void    cdecl Flash(char* format, ...) {}
+extc void    cdecl Flash(char* format, ...) {
+	va_list va;
+	va_start(va, format);
+	msg("[flash] ");
+	vmsg(format, va);
+	msg("\n");
+}
 
 
 extc int     cdecl Decodeaddress(ulong addr, ulong base, int addrmode,
@@ -161,8 +190,40 @@ extc int     cdecl OpenEXEfile(char* path, int dropped) { return 0; }
 extc int     cdecl Attachtoactiveprocess(int newprocessid) { return 0; }
 extc void    cdecl Animate(int animation) {}
 
+/*
+Initializes descriptor of sorted data (structure t_sorted). If descriptor alseady contains data, this data is destroyed. Returns 0 on success and -1 on error.
+
+int Createsorteddata(t_sorted *sd,char *name,int itemsize,int nmax,SORTFUNC *sortfunc,DESTFUNC *destfunc);
+
+Parameters:
+
+sd - pointer to descriptor of sorted data;
+
+name - optional name of sorted data, can be NULL. OllyDbg uses this name only in some rare cases;
+
+itemsize - size, in bytes, of the element of sorted data (including standard header);
+
+nmax - initial number of data elements that allocated buffer can keep. If necessary, OllyDbg will automatically allocate additional memory;
+
+sortfunc - pointer to function that compares two data elements according to sorting criterium, or NULL if data cannot be sorted. This criterium is usually the index of column in table window. If you specify AUTOARRANGE, data is autoarrangeable, that is, assumes that address of the element is simply its (0-based) ordinal number in the data and size of element is always 1. Even in this case, element must begin with valid header. Addsorteddata always inserts new items to autoarrangeable data and never replaces existing;
+
+destfunc - pointer to function that is called for each element being removed from the table, or NULL if destructor is not necessary. You need destfunc, for example, if elements of sorted data allocate additional memory that must be freed before element is deleted.
+
+*/
 extc int     cdecl Createsorteddata(t_sorted* sd, char* name, int itemsize,
 	int nmax, SORTFUNC* sortfunc, DESTFUNC* destfunc) {
+
+	if (name != nullptr) {
+		strncpy_s(sd->name, name, strlen(name));
+	}
+	else {
+		sd->name[0] = 0;
+	}
+	sd->nmax = nmax;
+	sd->sortfunc = sortfunc;
+	sd->destfunc = destfunc;
+	sd->data = NULL;
+
 	return 0;
 }
 extc void    cdecl Destroysorteddata(t_sorted* sd) {}
@@ -730,17 +791,153 @@ extc HWND    cdecl Createwinwindow(void) { return 0; }
 extc HWND    cdecl Createpatchwindow(void) { return 0; }
 
 
+/*
+Generates unique class name and registers new class of plugin windows. If iconname is NULL, uses standard plugin icon (letter 'P'). On success, returns 0 and fills classname (at least 32 bytes long) with unique class name. If registration failed, returns -1. Windows belonging to registered class has 8 longwords of extra memory, plugin is free to use longwords 2..7 (offsets 8..28 in calls to GetWindowLong and SetWindowLong). ODBG_Plugininit is the best place to call this function.
 
+int Registerpluginclass(char *classname,char *iconname,HINSTANCE dllinst,WNDPROC classproc);
+
+Parameters:
+
+classname - pointer to buffer of length at least 32 characters that will receive unique class name;
+
+iconname - name of icon resource in plugin DLL;
+
+dllinst - plugin's instance;
+
+classproc - pointer to window procedure of new class.
+
+*/
 extc int     cdecl Registerpluginclass(char* classname, char* iconname,
 	HINSTANCE dllinst, WNDPROC classproc) {
-	return 0;
+	// Yanked from Ollydbg
+
+	if (classname == NULL || classproc == NULL) {
+		return -1;
+	}
+
+	static int cnt = 0;
+	sprintf(classname, "OT_PLUGIN_%04i", cnt);
+	cnt++;
+
+	WNDCLASSA wc{};
+	wc.style = 11;
+	wc.lpfnWndProc = classproc;
+	wc.cbClsExtra = 0;
+	wc.cbWndExtra = 32;
+	wc.hInstance = GetModuleHandle(NULL);
+	wc.hIcon = 0;
+	// no icon?
+	wc.hCursor = 0;
+	wc.hbrBackground = 0;
+	wc.lpszMenuName = 0;
+	wc.lpszClassName = classname;
+
+	if (RegisterClassA(&wc)) {
+		return 0;
+	}
+
+	// Clear classname
+	classname[0] = 0;
+
+	return -1;
 }
 extc void    cdecl Unregisterpluginclass(char* classname) {}
-extc int     cdecl Pluginwriteinttoini(HINSTANCE dllinst, char* key, int value) { return 0; }
-extc int     cdecl Pluginwritestringtoini(HINSTANCE dllinst, char* key, char* s) { return 0; }
-extc int     cdecl Pluginreadintfromini(HINSTANCE dllinst, char* key, int def) { return 0; }
+/*
+Stores an integer associated with a key in the plugin's personal section of the ollydbg.ini. Returns 1 on success and 0 on error.
+
+int Pluginwriteinttoini(HINSTANCE dllinst,char *key,int value);
+
+Parameters:
+
+dllinst - plugin's instance;
+
+key - name of the key to be associated with an integer;
+
+value - integer to be written to ollydbg.ini.
+
+*/
+extc int     cdecl Pluginwriteinttoini(HINSTANCE dllinst, char* key, int value) {
+	CHAR text[30] = { 0 };
+	sprintf_s(text, "%d", value);
+
+	msg("writeinttoini %08x [%s] %s\n", dllinst, key, text);
+	auto plugin = OllyPlugin::get(dllinst);
+	if (plugin == NULL) {
+		return 0;
+	}
+
+	WritePrivateProfileStringA(plugin->get_name().c_str(), key, text, ini_filename);
+	return 1;
+}
+extc int     cdecl Pluginwritestringtoini(HINSTANCE dllinst, char* key, char* s) {
+	msg("writestringtoini %08x [%s] %s\n", dllinst, key, s);
+	auto plugin = OllyPlugin::get(dllinst);
+	if (plugin == NULL) {
+		msg("plugin == null\n");
+		return 0;
+	}
+
+	WritePrivateProfileStringA(plugin->get_name().c_str(), key, s, ini_filename);
+	return 1;
+}
+/*
+Reads integer associated with a key from the plugin's personal section of the ollydbg.ini. On success, returns integer from the initializations file. On error, returns specified default value.
+
+int Pluginreadintfromini(HINSTANCE dllinst,char *key,int def);
+
+Parameters:
+
+dllinst - plugin's instance;
+
+key - name of the key associated with an integer;
+
+def - default value.
+
+*/
+extc int     cdecl Pluginreadintfromini(HINSTANCE dllinst, char* key, int def) {
+	msg("readintfromini %d [%s] %d\n", dllinst, key, def);
+	auto plugin = OllyPlugin::get(dllinst);
+	if (plugin == NULL) {
+		msg("plugin == null\n");
+		return 0;
+	}
+	
+	return GetPrivateProfileIntA(plugin->get_name().c_str(), key, def, ini_filename);
+}
+/*
+Reads string associated with a key from the plugin's personal section of the ollydbg.ini. On success, returns string from the initializations file. On error, returns specified default string.
+
+int Pluginreadstringfromini(HINSTANCE dllinst,char *key,char *s,char *def);
+
+Parameters:
+
+dllinst - plugin's instance;
+
+key - name of the key associated with the string;
+
+s - pointer to buffer that receives string;
+
+def - pointer to a null-terminated default string.
+*/
 extc int     cdecl Pluginreadstringfromini(HINSTANCE dllinst, char* key,
 	char* s, char* def) {
+	msg("readstringfromini %d [%s] %s\n", dllinst, key, def);
+	auto plugin = OllyPlugin::get(dllinst);
+	if (plugin == NULL) {
+		msg("plugin == null\n");
+		return 0;
+	}
+
+	char tmp[128] = {0};
+	
+	int count = GetPrivateProfileStringA(plugin->get_name().c_str(), key, def, tmp, ARRAYSIZE(tmp), ini_filename);
+	if (count > 0) {
+		strncpy(s, tmp, count);
+	}
+	else {
+		// Default value
+		strncpy(s, def, strlen(def));
+	}
 	return 0;
 }
 extc int     cdecl Pluginsaverecord(ulong tag, ulong size, void* data) { return 0; }

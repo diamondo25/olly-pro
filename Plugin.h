@@ -1800,6 +1800,7 @@ extc int  _export cdecl ODBG_Pausedex(int reasonex,int dummy,t_reg *reg,
 extc int  _export cdecl ODBG_Plugincmd(int reason,t_reg *reg,char *cmd);
 #else
 
+#define get_proc_addr_plugin_raw(module, name) (name)GetProcAddress(module, "_"#name)
 #define get_proc_addr_plugin(module, name) name name##_cb = (name)GetProcAddress(module, "_"#name)
 
 // Prototypes for plugin callback functions.

@@ -2,6 +2,7 @@
 
 #include <Windows.h>
 #include <strsafe.h>
+#include <tchar.h>
 
 // IDA SDK
 // For IDA 6.1:
@@ -28,3 +29,8 @@ void print_insn_mnem(qstring * out, ea_t ea);
 ssize_t get_segm_class(qstring* out, const segment_t* seg);
 ssize_t idaapi get_segm_name(qstring* out, const segment_t* seg);
 #endif
+
+#include "Plugin.h"
+
+
+extern char ini_filename[];

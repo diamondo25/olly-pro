@@ -10,12 +10,14 @@
  */
 
 #include "stdafx.h"
-#include "Plugin.h"
+#include "OllyPlugin.h"
 
- //--------------------------------------------------------------------------
- // Example of a user-defined IDC function in C++
+char ini_filename[MAX_PATH] = { 0 };
 
- //#define DEFINE_IDC_FUNC
+//--------------------------------------------------------------------------
+// Example of a user-defined IDC function in C++
+
+//#define DEFINE_IDC_FUNC
 #ifdef DEFINE_IDC_FUNC
 static error_t idaapi myfunc5(idc_value_t* argv, idc_value_t* res)
 {
@@ -174,6 +176,16 @@ void idaapi term(void)
 #endif
 }
 
+bool __stdcall cb_menu_nop(void* ud) { return false; /* no refresh */ }
+
+
+bool __stdcall cb_menu_plugin(void* ud) {
+	OllyPlugin* op = (OllyPlugin*)ud;
+
+	return false;
+}
+
+
 //--------------------------------------------------------------------------
 //
 //      The plugin method
@@ -195,23 +207,29 @@ void idaapi run(int arg)
 {
 	// warning("plugin \"line_prefixes\" is called with arg %x", int(arg));
 
-	msg("just fyi: the current screen address is: %a\n", get_screen_ea());
+	// msg("just fyi: the current screen address is: %a\n", get_screen_ea());
 
+	msg("Build: %s\n", __TIMESTAMP__);
 
-	
+	// Trouble getting menu to work:
+	// https://github.com/keystone-engine/keypatch/blob/master/keypatch.py#L1689
+
 
 	const char* plugindir = idadir("plugins\\ollypro");
 
+	strcpy_s(ini_filename, plugindir);
+	strcat_s(ini_filename, "\\ollypro.ini");
+
 	// IDA_SDK_VERSION
-	
+
 	CHAR plugins[][100] = {
-		TEXT("OreansUnVirtualizer.dll"),
-		TEXT("invalid.dll"),
+		"OreansUnVirtualizer.dll",
+		"invalid.dll",
 	};
 
 	for (int i = 0; i < ARRAYSIZE(plugins); i++) {
 		CHAR* plugin = plugins[i];
-		CHAR pluginPath[MAX_PATH + 1] = {0};
+		CHAR pluginPath[MAX_PATH + 1] = { 0 };
 		strcat_s(pluginPath, plugindir);
 		strcat_s(pluginPath, "\\");
 		strcat_s(pluginPath, plugin);
@@ -235,29 +253,38 @@ void idaapi run(int arg)
 				continue;
 			}
 
-			char pluginName[33] = {0};
-			ODBG_Plugindata_cb(pluginName);
+			auto op = new OllyPlugin(mod, plugin);
+
+			char pluginName[33] = { 0 };
+			op->data(pluginName);
 			pluginName[32] = 0;
 			msg("plugindata: %s\n", pluginName);
 
-			get_proc_addr_plugin(mod, ODBG_Pluginmainloop);
-			get_proc_addr_plugin(mod, ODBG_Pluginsaveudd);
-			get_proc_addr_plugin(mod, ODBG_Pluginuddrecord);
-			get_proc_addr_plugin(mod, ODBG_Pluginmenu);
-			get_proc_addr_plugin(mod, ODBG_Pluginaction);
-			get_proc_addr_plugin(mod, ODBG_Pluginshortcut);
-			get_proc_addr_plugin(mod, ODBG_Pluginreset);
-			get_proc_addr_plugin(mod, ODBG_Pluginclose);
-			get_proc_addr_plugin(mod, ODBG_Plugindestroy);
-			get_proc_addr_plugin(mod, ODBG_Paused);
-			get_proc_addr_plugin(mod, ODBG_Pausedex);
-			get_proc_addr_plugin(mod, ODBG_Plugincmd);
+			int err;
+			if (err = op->init(PLUGIN_VERSION, (HWND)callui(ui_get_hwnd).vptr, NULL), err != 0) {
+				msg("init failed with code %d\n", err);
+				FreeLibrary(mod);
+				continue;
+			}
 
+			char menudata[4096];
+			if (op->menu(PM_DISASM, menudata, NULL) == 1) {
+				qstring s{menudata};
+				// time to process the string
+			}
+
+			t_dump dump{};
+			dump.sel0 = get_screen_ea();
+			
+
+			op->action(PM_DISASM, 1, &dump);
+
+			add_menu_item("Edit", pluginName, NULL, SETMENU_CTXAPP | SETMENU_APP, cb_menu_plugin, op);
 		}
 
 	}
 
-	
+
 #if IDA700
 	return true;
 #endif

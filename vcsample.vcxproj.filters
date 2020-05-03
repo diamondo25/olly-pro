@@ -24,6 +24,9 @@
     <ClCompile Include="ida70_backwards_compat.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="OllyPlugin.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="Ollydbg.def">
@@ -35,6 +38,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="stdafx.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="OllyPlugin.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

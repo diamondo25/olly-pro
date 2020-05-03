@@ -147,7 +147,7 @@
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>_DEBUG;__NT__;__IDP__;MAXSTR=1024;__X86__;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
-      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <PrecompiledHeaderOutputFile>$(OutDir)/vcsample.pch</PrecompiledHeaderOutputFile>
       <AssemblerListingLocation>$(OutDir)</AssemblerListingLocation>
       <ObjectFileName>$(OutDir)</ObjectFileName>
@@ -170,9 +170,10 @@
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <ProgramDatabaseFile>$(OutDir)/vcsample.pdb</ProgramDatabaseFile>
+      <ProgramDatabaseFile>$(OutDir)/ollypro.pdb</ProgramDatabaseFile>
       <ImportLibrary>$(OutDir)/vcsample.lib</ImportLibrary>
       <ModuleDefinitionFile>Ollydbg.def</ModuleDefinitionFile>
+      <AssemblyDebug>true</AssemblyDebug>
     </Link>
     <Bscmake>
       <SuppressStartupBanner>true</SuppressStartupBanner>
@@ -267,6 +268,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="ida70_backwards_compat.cpp" />
+    <ClCompile Include="OllyPlugin.cpp" />
     <ClCompile Include="olly_wrapper.cpp" />
     <ClCompile Include="STRINGS.CPP">
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">__WIN32__;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -277,6 +279,7 @@
     <None Include="Ollydbg.def" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="OllyPlugin.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="Plugin.h" />
   </ItemGroup>
