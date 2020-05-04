@@ -179,13 +179,32 @@ void idaapi term(void)
 bool __stdcall cb_menu_nop(void* ud) { return false; /* no refresh */ }
 
 
+typedef struct menu_item_info {
+	int origin;
+	int action;
+	HMODULE mod;
+
+	menu_item_info(HMODULE mod, int origin, int action) {
+		this->origin = origin;
+		this->action = action;
+		this->mod = mod;
+	}
+} menu_item_info_t;
+
+
 bool __stdcall cb_menu_plugin(void* ud) {
-	OllyPlugin* op = (OllyPlugin*)ud;
+	menu_item_info_t* mii = (menu_item_info_t*)ud;
+	
+	t_dump dump{};
+	dump.sel0 = get_screen_ea();
+	
+	auto op = OllyPlugin::get(mii->mod);
+	if (op != nullptr) {
+		op->action(mii->origin, mii->action, &dump);
+	}
 
 	return false;
 }
-
-
 //--------------------------------------------------------------------------
 //
 //      The plugin method
@@ -273,13 +292,20 @@ void idaapi run(int arg)
 				// time to process the string
 			}
 
+			/*
 			t_dump dump{};
 			dump.sel0 = get_screen_ea();
-			
-
 			op->action(PM_DISASM, 1, &dump);
+			*/
+			/*
+			Oreans UnVirtualizer{0 &Find References|1 Unvirtualize &No Jmp\tAlt+U,2 UnVirtualize with &Jmp\tAlt+I,3 UnVirtualize &Call Immc\tAlt+Y}
+			
+			*/
 
-			add_menu_item("Edit", pluginName, NULL, SETMENU_CTXAPP | SETMENU_APP, cb_menu_plugin, op);
+			add_menu_item("Edit", qstring(pluginName).append(" -> Find References").c_str(), NULL, SETMENU_CTXAPP | SETMENU_APP, cb_menu_plugin, new menu_item_info_t(mod, PM_DISASM, 0));
+			add_menu_item("Edit", qstring(pluginName).append(" -> Unvirtualize No Jmp").c_str(), NULL, SETMENU_CTXAPP | SETMENU_APP, cb_menu_plugin, new menu_item_info_t(mod, PM_DISASM, 1));
+			add_menu_item("Edit", qstring(pluginName).append(" -> UnVirtualize with Jmp").c_str(), NULL, SETMENU_CTXAPP | SETMENU_APP, cb_menu_plugin, new menu_item_info_t(mod, PM_DISASM, 2));
+			add_menu_item("Edit", qstring(pluginName).append(" -> UnVirtualize Call Immc").c_str(), NULL, SETMENU_CTXAPP | SETMENU_APP, cb_menu_plugin, new menu_item_info_t(mod, PM_DISASM, 3));
 		}
 
 	}
@@ -289,6 +315,11 @@ void idaapi run(int arg)
 	return true;
 #endif
 }
+
+void build_menu_tree(qstring* str, int mode) {
+
+}
+
 
 //--------------------------------------------------------------------------
 static const char comment[] = "Load OllyDgb 1.10 plugins in IDA Pro";

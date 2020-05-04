@@ -91,7 +91,23 @@ promille - progress, in 1/1000th;
 format - format string (as in call to printf), followed by optional arguments.
 
 */
-extc void    cdecl Progress(int promille, char* format, ...) {}
+extc void    cdecl Progress(int promille, char* format, ...) {
+	va_list va;
+	va_start(va, format);
+
+	char stars[101] = {};
+	for (int i = 0; i < 100; i++) {
+		if (promille < (i * 10)) {
+			stars[i] = 'x';
+		} else {
+			stars[i] = ' ';
+		}
+	}
+
+	msg("[%s] ", stars);
+	vmsg(format, va);
+	msg("\n");
+}
 /*
 Displays highlighted message on the bottom of main OllyDbg window. This message automatically disappears in 500 milliseconds.
 
@@ -232,7 +248,9 @@ extc void    cdecl Deletesorteddata(t_sorted* sd, ulong addr) {}
 extc void    cdecl Deletesorteddatarange(t_sorted* sd, ulong addr0, ulong addr1) {}
 extc int     cdecl Deletenonconfirmedsorteddata(t_sorted* sd) { return 0; }
 extc void* cdecl Findsorteddata(t_sorted* sd, ulong addr) { return 0; }
-extc void* cdecl Findsorteddatarange(t_sorted* sd, ulong addr0, ulong addr1) { return 0; }
+extc void* cdecl Findsorteddatarange(t_sorted* sd, ulong addr0, ulong addr1) {
+	return 0;
+}
 extc int     cdecl Findsorteddataindex(t_sorted* sd, ulong addr0, ulong addr1) { return 0; }
 extc int     cdecl Sortsorteddata(t_sorted* sd, int sort) { return 0; }
 extc void* cdecl Getsortedbyselection(t_sorted* sd, int index) { return 0; }
@@ -299,6 +317,7 @@ Example:
 */
 extc ulong   cdecl Disasm(uchar* src, ulong srcsize, ulong srcip, uchar* srcdec,
 	t_disasm* disasm, int disasmmode, ulong threadid) {
+	msg("Disasm %08x %d\n", srcip, srcsize);
 
 	// Pretty much disassemble the given src[0:srcsize], that is based on addr srcip.
 	// Do not use decoding data srcdec
@@ -382,6 +401,8 @@ addr - address of memory in the memory space of debugged application.
 
 */
 extc t_memory* cdecl Findmemory(ulong addr) {
+	msg("Findmemory %08x\n", addr);
+
 	sel_t selector = find_selector(addr);
 	const segment_t* segment = get_segm_by_sel(selector);
 
@@ -474,6 +495,7 @@ MM_RESTORE	Restore INT3 breakpoints
 MM_SILENT	On error, don't display error message box
 */
 extc ulong   cdecl Readmemory(void* buf, ulong addr, ulong size, int mode) {
+	msg("Readmemory %08x len %d\n", addr, size);
 
 	ssize_t ret = get_bytes(buf, size, addr);
 	if (ret == -1) {
@@ -504,10 +526,16 @@ MM_DELANAL	Wipe off analysis in the modified area
 MM_SILENT	On error, don't display error message box
 */
 extc ulong   cdecl Writememory(void* buf, ulong addr, ulong size, int mode) {
+	msg("Writememory %08x len %d mode %d\n", addr, size, mode);
 	patch_bytes(addr, buf, size);
 	if (mode & MM_DELANAL) {
+		msg("Analyzing data\n");
 		// Re-analyze region
-		reanalyze_function(NULL, addr, addr + size);
+		do_unknown_range(addr, size, DOUNK_SIMPLE);
+		for (int i = 0; i < 20; i++) {
+			create_insn(addr + i);
+		}
+		//reanalyze_function(NULL, addr, addr + size);
 	}
 	return size;
 }
@@ -515,7 +543,38 @@ extc ulong   cdecl Readcommand(ulong ip, char* cmd) { return 0; }
 
 
 
-extc t_module* cdecl Findmodule(ulong addr) { return 0; }
+extc t_module* cdecl Findmodule(ulong addr) {
+	msg("Findmodule %08x\n", addr);
+
+	t_module* ret = new t_module();
+	if (is_debugger_on() && false) {
+		// Load modules from debugger info
+		module_info_t minfo;
+		for (bool ok = get_first_module(&minfo); ok; ok = get_next_module(&minfo)) {
+
+		}
+	}
+
+	ret->base = get_imagebase();
+	ret->nsect = get_segm_qty();
+
+	auto sh = (IMAGE_SECTION_HEADER*)qalloc_or_throw(ret->nsect * sizeof(IMAGE_SECTION_HEADER));
+
+	for (int i = 0; i < ret->nsect; i++) {
+		auto segm = getnseg(i);
+		get_segm_name(segm, (char*)sh[i].Name, ARRAYSIZE(sh[i].Name));
+		sh[i].VirtualAddress = segm->startEA - ret->base;
+		sh[i].Misc.VirtualSize = segm->endEA - segm->startEA;
+
+	}
+
+	ret->sect = sh;
+
+	return ret;
+}
+
+
+
 extc t_fixup* cdecl Findfixup(t_module* pmod, ulong addr) { return 0; }
 
 /*
@@ -901,7 +960,7 @@ extc int     cdecl Pluginreadintfromini(HINSTANCE dllinst, char* key, int def) {
 		msg("plugin == null\n");
 		return 0;
 	}
-	
+
 	return GetPrivateProfileIntA(plugin->get_name().c_str(), key, def, ini_filename);
 }
 /*
@@ -928,8 +987,8 @@ extc int     cdecl Pluginreadstringfromini(HINSTANCE dllinst, char* key,
 		return 0;
 	}
 
-	char tmp[128] = {0};
-	
+	char tmp[128] = { 0 };
+
 	int count = GetPrivateProfileStringA(plugin->get_name().c_str(), key, def, tmp, ARRAYSIZE(tmp), ini_filename);
 	if (count > 0) {
 		strncpy(s, tmp, count);
@@ -941,6 +1000,89 @@ extc int     cdecl Pluginreadstringfromini(HINSTANCE dllinst, char* key,
 	return 0;
 }
 extc int     cdecl Pluginsaverecord(ulong tag, ulong size, void* data) { return 0; }
-extc int     cdecl Plugingetvalue(int type) { return 0; }
+/*
+Retrieves various OllyDbg settings and variables.
 
+int Plugingetvalue(int type);
+
+Parameters:
+
+type - setting or variable to retrieve:
+
+type	Cast to	Explanation
+VAL_HINST	(HINST)	Current OllyDbg instance
+VAL_HWMAIN	(HWND)	Handle of the main OllyDbg window
+VAL_HWCLIENT	(HWND)	Handle of the MDI client window
+VAL_NCOLORS		Number of common colors
+VAL_COLORS	(COLORREF *)	RGB values of common colors
+VAL_BRUSHES	(HBRUSH *)	Handles of common color brushes
+VAL_PENS	(PEN *)	Handles of common color pens
+VAL_NFONTS		Number of common fonts
+VAL_FONTS	(HFONT *)	Handles of common fonts
+VAL_FONTNAMES	(char **)	Internal font names
+VAL_FONTWIDTHS	(int *)	Average widths of common fonts
+VAL_FONTHEIGHTS	(int *)	Average heigths of common fonts
+VAL_NFIXFONTS		Actual number of fixed-pitch fonts
+VAL_DEFFONT		Index of default font
+VAL_NSCHEMES		Number of color schemes
+VAL_SCHEMES	(t_scheme *)	Colour schemes
+VAL_DEFSCHEME		Index of default colour scheme
+VAL_DEFHSCROLL		Default horizontal scroll
+VAL_RESTOREWINDOWPOS	Restore window positions from .ini
+VAL_HPROCESS	(HANDLE)	Handle of debugged process
+VAL_PROCESSID		Process ID of debugged process
+VAL_HMAINTHREAD	(HANDLE)	Handle of main thread of debugged process
+VAL_MAINTHREADID		Thread ID of main thread of debugged process
+VAL_MAINBASE		Base of main module in the debugged process
+VAL_PROCESSNAME	(char *)	Name of the debugged process
+VAL_EXEFILENAME	(char *)	Name of the main debugged file
+VAL_CURRENTDIR	(char *)	Current directory for debugged process
+VAL_SYSTEMDIR	(char *)	Windows system directory
+VAL_DECODEANYIP		Decode registers dependless on EIP
+VAL_PASCALSTRINGS		Decode Pascal-style string constants
+VAL_ONLYASCII		Only printable ASCII chars in dump
+VAL_DIACRITICALS		Allow diacritical symbols in strings
+VAL_GLOBALSEARCH		Search from the beginning of block
+VAL_ALIGNEDSEARCH		Search aligned to item's size
+VAL_SEARCHMARGIN		Floating search allows error margin
+VAL_KEEPSELSIZE		Keep size of hex edit selection
+VAL_MMXDISPLAY		MMX display mode in dialog (0:hex, 1:signed, 2:unsigned MMX)
+VAL_WINDOWFONT		Use calling window's font in dialog
+VAL_TABSTOPS		Distance between tab stops
+VAL_MODULES	(t_table *)	Table of modules (.EXE and .DLL)
+VAL_MEMORY	(t_table *)	Table of allocated memory blocks
+VAL_THREADS	(t_table *)	Table of active threads
+VAL_BREAKPOINTS	(t_table *)	Table of active breakpoints
+VAL_REFERENCES	(t_table *)	Table with found references
+VAL_SOURCELIST	(t_table *)	Table of source files
+VAL_WATCHES	(t_table *)	Table of watches
+VAL_CPUFEATURES		CPU feature bits as returned by CPUID
+VAL_TRACEFILE	(FILE *)	Handle of run trace log file
+VAL_ALIGNDIALOGS		Align dialogs
+VAL_CPUDASM	(t_dump *)	Dump descriptor of CPU Disassembler pane
+VAL_CPUDDUMP	(t_dump *)	Dump descriptor of CPU Dump pane
+VAL_CPUDSTACK	(t_dump *)	Dump descriptor of CPU Stack pane
+VAL_APIHELP	(char *)	Name of selected API help file
+VAL_HARDBP		Whether hardware breakpoints are enabled
+VAL_PATCHES	(t_table *)	Table of patches
+VAL_HINTS	(t_sorted *)	Sorted data with analysis hints
+
+*/
+extc int     cdecl Plugingetvalue(int type) {
+	msg("Plugingetvalue %d\n", type);
+
+	static HFONT hFont = CreateFont (8, 0, 0, 0, FW_DONTCARE, FALSE, FALSE, FALSE, ANSI_CHARSET, 
+      OUT_TT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, 
+      DEFAULT_PITCH | FF_DONTCARE, TEXT("Lucida Console"));
+
+	switch (type) {
+	case VAL_HINST: return (int)GetModuleHandle(NULL);
+	case VAL_FONTS: return (int)&hFont;
+	case VAL_DEFFONT: return 0;
+	default:
+		msg("[unknown]Plugingetvalue %d\n", type);
+		break;
+	}
+	return 0;
+}
 

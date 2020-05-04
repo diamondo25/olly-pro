@@ -15,6 +15,7 @@
 #include <loader.hpp>
 #include <kernwin.hpp>
 #include <diskio.hpp>
+#include <dbg.hpp>
 
 #define IDA700 (IDA_SDK_VERSION == 700)
 #define IDA610 (IDA_SDK_VERSION == 610)
