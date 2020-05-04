@@ -2,7 +2,14 @@
 
 #pragma once
 #include <unordered_map>
+#include <stack>
 
+struct patch_t {
+	uint32 offset;
+	uint8* data;
+	size_t data_len;
+	int mode;
+};
 
 class OllyPlugin
 {
@@ -52,6 +59,8 @@ public:
 	}
 
 	const std::string& get_name() const { return name; }
+
+	std::stack<patch_t> patches;
 
 private:
 	static std::unordered_map<HMODULE, OllyPlugin*> g_s_plugins;

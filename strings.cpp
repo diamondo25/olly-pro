@@ -194,13 +194,22 @@ typedef struct menu_item_info {
 
 bool __stdcall cb_menu_plugin(void* ud) {
 	menu_item_info_t* mii = (menu_item_info_t*)ud;
-	
-	t_dump dump{};
-	dump.sel0 = get_screen_ea();
-	
+
 	auto op = OllyPlugin::get(mii->mod);
 	if (op != nullptr) {
-		op->action(mii->origin, mii->action, &dump);
+
+		if (mii->action == -1) {
+			if (!op->patches.empty()) {
+				auto patch = op->patches.top();
+				Writememory(patch.data, patch.offset, patch.data_len, patch.mode | MM_REVERT_PATCH);
+			}
+		}
+		else {
+			t_dump dump{};
+			dump.sel0 = get_screen_ea();
+
+			op->action(mii->origin, mii->action, &dump);
+		}
 	}
 
 	return false;
@@ -288,7 +297,7 @@ void idaapi run(int arg)
 
 			char menudata[4096];
 			if (op->menu(PM_DISASM, menudata, NULL) == 1) {
-				qstring s{menudata};
+				qstring s{ menudata };
 				// time to process the string
 			}
 
@@ -299,9 +308,10 @@ void idaapi run(int arg)
 			*/
 			/*
 			Oreans UnVirtualizer{0 &Find References|1 Unvirtualize &No Jmp\tAlt+U,2 UnVirtualize with &Jmp\tAlt+I,3 UnVirtualize &Call Immc\tAlt+Y}
-			
+
 			*/
 
+			add_menu_item("Edit", qstring(pluginName).append(" -> Revert last patch").c_str(), NULL, SETMENU_CTXAPP | SETMENU_APP, cb_menu_plugin, new menu_item_info_t(mod, PM_DISASM, -1));
 			add_menu_item("Edit", qstring(pluginName).append(" -> Find References").c_str(), NULL, SETMENU_CTXAPP | SETMENU_APP, cb_menu_plugin, new menu_item_info_t(mod, PM_DISASM, 0));
 			add_menu_item("Edit", qstring(pluginName).append(" -> Unvirtualize No Jmp").c_str(), NULL, SETMENU_CTXAPP | SETMENU_APP, cb_menu_plugin, new menu_item_info_t(mod, PM_DISASM, 1));
 			add_menu_item("Edit", qstring(pluginName).append(" -> UnVirtualize with Jmp").c_str(), NULL, SETMENU_CTXAPP | SETMENU_APP, cb_menu_plugin, new menu_item_info_t(mod, PM_DISASM, 2));

@@ -527,7 +527,20 @@ MM_SILENT	On error, don't display error message box
 */
 extc ulong   cdecl Writememory(void* buf, ulong addr, ulong size, int mode) {
 	msg("Writememory %08x len %d mode %d\n", addr, size, mode);
+	
+	if ((mode & MM_REVERT_PATCH) == 0) {
+		patch_t p{};
+		p.data = (uint8*)qalloc_or_throw(size);
+		p.data_len = size;
+		p.offset = addr;
+		p.mode = mode;
+		get_bytes(p.data, p.data_len, addr);
+
+		OllyPlugin::g_s_current_plugin->patches.push(p);
+	}
+
 	patch_bytes(addr, buf, size);
+
 	if (mode & MM_DELANAL) {
 		msg("Analyzing data\n");
 		// Re-analyze region
@@ -535,7 +548,6 @@ extc ulong   cdecl Writememory(void* buf, ulong addr, ulong size, int mode) {
 		for (int i = 0; i < 20; i++) {
 			create_insn(addr + i);
 		}
-		//reanalyze_function(NULL, addr, addr + size);
 	}
 	return size;
 }

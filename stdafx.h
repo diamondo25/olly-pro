@@ -20,6 +20,7 @@
 #define IDA700 (IDA_SDK_VERSION == 700)
 #define IDA610 (IDA_SDK_VERSION == 610)
 
+#define MM_REVERT_PATCH 0x80
 
 #if IDA610
 #define get_bytes(buf, buf_size, ea) get_many_bytes(ea, buf, buf_size)
