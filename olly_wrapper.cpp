@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "OllyPlugin.h"
+#include <list>
 
 // Fix for missing Isprefix inside Plugin.h, but exported by olly inside the Ollydbg.def file
 extc void cdecl Isprefix(void) {}
@@ -97,9 +98,10 @@ extc void    cdecl Progress(int promille, char* format, ...) {
 
 	char stars[101] = {};
 	for (int i = 0; i < 100; i++) {
-		if (promille < (i * 10)) {
+		if (promille >= (i * 10)) {
 			stars[i] = 'x';
-		} else {
+		}
+		else {
 			stars[i] = ' ';
 		}
 	}
@@ -238,14 +240,161 @@ extc int     cdecl Createsorteddata(t_sorted* sd, char* name, int itemsize,
 	sd->nmax = nmax;
 	sd->sortfunc = sortfunc;
 	sd->destfunc = destfunc;
-	sd->data = NULL;
+
+	if (sd->data != nullptr) {
+		qfree(sd->data);
+	}
+	
+	sd->data = (void**)qalloc_or_throw(sd->nmax * sizeof(void*));
+	sd->itemsize = itemsize;
 
 	return 0;
 }
-extc void    cdecl Destroysorteddata(t_sorted* sd) {}
-extc void    cdecl* Addsorteddata(t_sorted* sd, void* item) { return 0; }
-extc void    cdecl Deletesorteddata(t_sorted* sd, ulong addr) {}
-extc void    cdecl Deletesorteddatarange(t_sorted* sd, ulong addr0, ulong addr1) {}
+extc void    cdecl Destroysorteddata(t_sorted* sd) {
+	if (sd == nullptr) return;
+	if (sd->data != nullptr) {
+		qfree(sd->data);
+		sd->data = nullptr;
+	}
+}
+
+
+// NOTE: Not compatible with std::qsort_s
+// See https://github.com/MicrosoftDocs/cpp-docs/issues/2162
+int compare_sorteddata(void* context, const void* a, const void* b) {
+	auto sd = (t_sorted*)context;
+	auto sha = (t_sortheader*)a;
+	auto shb = (t_sortheader*)b;
+	if (sd->sortfunc == AUTOARRANGE) {
+		// Sort on address
+		return sha->addr - shb->addr;
+	}
+	else {
+		return sd->sortfunc(sha, shb, sd->sort);
+	}
+}
+/*
+Adds or replaces element in initialized sorted data. Returns pointer to item in the data if item is correctly added or replaced and NULL if either input parameters are invalid, data buffer is full and OllyDbg is unable to allocate more memory, new element cannot replace old because it is neither subset nor superset of the old item, or it overlaps with two or more existing elements. This pointer is valid till the next operation that adds or removes data. Do not change address or size of element after it is added to sorted data, this may lead to severe data integrity problems.
+
+void *Addsorteddata(t_sorted *sd,void *item);
+
+Parameters:
+
+sd - pointer to initialized descriptor of sorted data;
+
+item - pointer to new element.
+
+*/
+extc void    cdecl* Addsorteddata(t_sorted* sd, void* item) {
+	if (sd == nullptr) {
+		return (void*)0;
+	}
+
+	
+	// Size up the array if needed
+	if (sd->n == sd->nmax) {
+		sd->nmax = qmax(sd->nmax * 2, 32);
+		sd->data = (void**)qrealloc_or_throw(sd->data, sd->nmax * sizeof(void*));
+	}
+
+	((void**)sd->data)[sd->n] = item;
+
+	void* ret = &((void**)sd->data)[sd->n];
+
+	sd->n++;
+
+	qsort_s(sd->data, sd->n, sizeof(void*), compare_sorteddata, sd);
+	
+	return ret;
+}
+/*
+Deletes element which begins exactly at specified address from sorted data.
+
+void Deletesorteddata(t_sorted *sd,ulong addr);
+
+Parameters:
+
+sd - pointer to initialized descriptor of sorted data;
+
+addr - address of element.
+
+*/
+extc void    cdecl Deletesorteddata(t_sorted* sd, ulong addr) {
+	if (sd == nullptr) {
+		return;
+	}
+
+	int pos = -1;
+	t_sortheader** arr = (t_sortheader**)sd->data;
+	for (int i = 0; i < sd->n; i++) {
+		auto sh = arr[i];
+		if (sh->addr == addr) {
+			pos = i;
+			break;
+		}
+	}
+
+	if (pos == -1) {
+		// Not found
+		return;
+	}
+
+	if (pos == sd->n - 1) {
+		// last element, just decrease count and return
+		sd->n--;
+		return;
+	}
+
+	// Already sorted, so just move it move it to the left
+	memmove((void*)&sd->data[pos], (void*)&sd->data[pos+1], (sd->n - pos)*sizeof(void*));
+}
+/*Deletes all elements which contain at least 1 address within the specified range from the table of sorted data.
+
+void Deletesorteddatarange(t_sorted *sd,ulong addr0,ulong addr1);
+
+Parameters:
+
+sd - pointer to initialized descriptor of sorted data;
+
+addr0 - start of address range (included);
+
+addr1 - end of address range (not included).
+
+*/
+extc void    cdecl Deletesorteddatarange(t_sorted* sd, ulong addr0, ulong addr1) {
+	// Same as Deletesorteddata, but then delete a chunk
+	if (sd == nullptr) {
+		return;
+	}
+
+	int startpos = -1;
+	int endpos = -1;
+	t_sortheader** arr = (t_sortheader**)sd->data;
+	for (int i = 0; i < sd->n; i++) {
+		auto sh = arr[i];
+		if (addr0 >= sh->addr &&
+			sh->addr + sh->size < addr1) {
+			if (startpos == -1) {
+				startpos = i;
+			}
+			endpos = i;
+		}
+	}
+
+	if (startpos == -1) {
+		// Not found
+		return;
+	}
+
+	if (endpos == sd->n - 1) {
+		// until last element, so get rid of everything since start
+		sd->n = startpos - 1;
+		return;
+	}
+
+	// Already sorted, so just move it move it to the left
+	memmove((void*)&sd->data[startpos], (void*)&sd->data[endpos], (sd->n - endpos)*sizeof(void*));
+}
 extc int     cdecl Deletenonconfirmedsorteddata(t_sorted* sd) { return 0; }
 extc void* cdecl Findsorteddata(t_sorted* sd, ulong addr) { return 0; }
 extc void* cdecl Findsorteddatarange(t_sorted* sd, ulong addr0, ulong addr1) {
@@ -322,7 +471,7 @@ extc ulong   cdecl Disasm(uchar* src, ulong srcsize, ulong srcip, uchar* srcdec,
 	// Pretty much disassemble the given src[0:srcsize], that is based on addr srcip.
 	// Do not use decoding data srcdec
 
-	if (disasm == NULL) {
+	if (disasm == nullptr) {
 		warning("disasm == null");
 		return 0;
 	}
@@ -403,10 +552,10 @@ addr - address of memory in the memory space of debugged application.
 extc t_memory* cdecl Findmemory(ulong addr) {
 	msg("Findmemory %08x\n", addr);
 
-	sel_t selector = find_selector(addr);
-	const segment_t* segment = get_segm_by_sel(selector);
+	const segment_t* segment = getseg(addr);
 
 	if (segment == nullptr) {
+		warning("Unable to find segment for addr %08x\n", addr);
 		return 0;
 	}
 
@@ -426,7 +575,7 @@ extc t_memory* cdecl Findmemory(ulong addr) {
 	strncpy_s(ret->sect, name.c_str(), name.length());
 	ret->owner = 0;
 	ret->threadid = 0;
-	ret->copy = NULL;
+	ret->copy = nullptr;
 
 #if IDA610
 	ret->base = segment->startEA;
@@ -435,6 +584,8 @@ extc t_memory* cdecl Findmemory(ulong addr) {
 	ret->base = segment->start_ea;
 	ret->size = segment->end_ea - segment->start_ea;
 #endif
+
+
 	ret->type = 0;
 	if (str == "DATA") ret->type |= TY_DATA;
 	if (str == "CODE") ret->type |= TY_CODE;
@@ -467,6 +618,9 @@ extc t_memory* cdecl Findmemory(ulong addr) {
 	else {
 		warning("Unknown permissions on segment %s, r %d w %d x %d", name.c_str(), perm_r, perm_w, perm_x);
 	}
+
+	msg("? Name: %s, base %08x size %08x\n", name.c_str(), ret->base, ret->size);
+
 
 	return ret;
 }
@@ -527,17 +681,21 @@ MM_SILENT	On error, don't display error message box
 */
 extc ulong   cdecl Writememory(void* buf, ulong addr, ulong size, int mode) {
 	msg("Writememory %08x len %d mode %d\n", addr, size, mode);
-	
-	if ((mode & MM_REVERT_PATCH) == 0) {
-		patch_t p{};
-		p.data = (uint8*)qalloc_or_throw(size);
-		p.data_len = size;
-		p.offset = addr;
-		p.mode = mode;
-		get_bytes(p.data, p.data_len, addr);
 
-		OllyPlugin::g_s_current_plugin->patches.push(p);
+	
+	patch_t p{};
+	p.data = (uint8*)qalloc_or_throw(size);
+	p.data_len = size;
+	p.ea = addr;
+	p.mode = mode & ~MM_UNDOREDO_FLAG;
+	get_bytes(p.data, p.data_len, addr);
+	if ((mode & MM_REVERT_PATCH) == 0) {
+		OllyPlugin::g_s_current_plugin->push_undo_action(p);
 	}
+	else if ((mode & MM_REDO_PATCH) == 0) {
+		OllyPlugin::g_s_current_plugin->push_redo_action(p);
+	}
+	
 
 	patch_bytes(addr, buf, size);
 
@@ -545,7 +703,7 @@ extc ulong   cdecl Writememory(void* buf, ulong addr, ulong size, int mode) {
 		msg("Analyzing data\n");
 		// Re-analyze region
 		do_unknown_range(addr, size, DOUNK_SIMPLE);
-		for (int i = 0; i < 20; i++) {
+		for (int i = 0; i < 20 && i < size; i++) {
 			create_insn(addr + i);
 		}
 	}
@@ -882,7 +1040,7 @@ extc int     cdecl Registerpluginclass(char* classname, char* iconname,
 	HINSTANCE dllinst, WNDPROC classproc) {
 	// Yanked from Ollydbg
 
-	if (classname == NULL || classproc == NULL) {
+	if (classname == nullptr || classproc == nullptr) {
 		return -1;
 	}
 
@@ -933,7 +1091,7 @@ extc int     cdecl Pluginwriteinttoini(HINSTANCE dllinst, char* key, int value) 
 
 	msg("writeinttoini %08x [%s] %s\n", dllinst, key, text);
 	auto plugin = OllyPlugin::get(dllinst);
-	if (plugin == NULL) {
+	if (plugin == nullptr) {
 		return 0;
 	}
 
@@ -943,7 +1101,7 @@ extc int     cdecl Pluginwriteinttoini(HINSTANCE dllinst, char* key, int value) 
 extc int     cdecl Pluginwritestringtoini(HINSTANCE dllinst, char* key, char* s) {
 	msg("writestringtoini %08x [%s] %s\n", dllinst, key, s);
 	auto plugin = OllyPlugin::get(dllinst);
-	if (plugin == NULL) {
+	if (plugin == nullptr) {
 		msg("plugin == null\n");
 		return 0;
 	}
@@ -968,7 +1126,7 @@ def - default value.
 extc int     cdecl Pluginreadintfromini(HINSTANCE dllinst, char* key, int def) {
 	msg("readintfromini %d [%s] %d\n", dllinst, key, def);
 	auto plugin = OllyPlugin::get(dllinst);
-	if (plugin == NULL) {
+	if (plugin == nullptr) {
 		msg("plugin == null\n");
 		return 0;
 	}
@@ -994,7 +1152,7 @@ extc int     cdecl Pluginreadstringfromini(HINSTANCE dllinst, char* key,
 	char* s, char* def) {
 	msg("readstringfromini %d [%s] %s\n", dllinst, key, def);
 	auto plugin = OllyPlugin::get(dllinst);
-	if (plugin == NULL) {
+	if (plugin == nullptr) {
 		msg("plugin == null\n");
 		return 0;
 	}
@@ -1083,9 +1241,9 @@ VAL_HINTS	(t_sorted *)	Sorted data with analysis hints
 extc int     cdecl Plugingetvalue(int type) {
 	msg("Plugingetvalue %d\n", type);
 
-	static HFONT hFont = CreateFont (8, 0, 0, 0, FW_DONTCARE, FALSE, FALSE, FALSE, ANSI_CHARSET, 
-      OUT_TT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, 
-      DEFAULT_PITCH | FF_DONTCARE, TEXT("Lucida Console"));
+	static HFONT hFont = CreateFont(11, 0, 0, 0, FW_DONTCARE, FALSE, FALSE, FALSE, ANSI_CHARSET,
+		OUT_TT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
+		DEFAULT_PITCH | FF_DONTCARE, TEXT("Lucida Console"));
 
 	switch (type) {
 	case VAL_HINST: return (int)GetModuleHandle(NULL);

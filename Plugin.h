@@ -699,7 +699,7 @@ typedef struct t_sorted {              // Descriptor of sorted table
   ulong          seladdr;              // Base address of selected entry
   int            itemsize;             // Size of single entry
   ulong          version;              // Unique version of table
-  void           *data;                // Entries, sorted by address
+  void*          *data;                // Entries, sorted by address
   SORTFUNC       *sortfunc;            // Function which sorts data or NULL
   DESTFUNC       *destfunc;            // Destructor function or NULL
   int            sort;                 // Sorting criterium (column)

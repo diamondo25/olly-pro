@@ -276,6 +276,7 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <None Include="cpp.hint" />
     <None Include="Ollydbg.def" />
   </ItemGroup>
   <ItemGroup>

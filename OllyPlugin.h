@@ -5,7 +5,7 @@
 #include <stack>
 
 struct patch_t {
-	uint32 offset;
+	ea_t ea;
 	uint8* data;
 	size_t data_len;
 	int mode;
@@ -60,11 +60,89 @@ public:
 
 	const std::string& get_name() const { return name; }
 
-	std::stack<patch_t> patches;
+	std::string menu_name;
 
+	bool add_menu_item(
+		const char* name,
+		const char* hotkey,
+		int flags,
+		menu_item_callback_t* callback,
+		void* ud) {
+
+		// TODO: Normalize name so it doesn't try to create submenus
+
+		std::string fullname{ menu_name };
+		fullname.append(" -> ");
+		fullname.append(name);
+
+		if (::add_menu_item(
+			"Edit",
+			fullname.c_str(),
+			hotkey, flags, callback, ud
+		)) {
+			menu_items.push_back(std::string("Edit/").append(fullname));
+			return true;
+		}
+		return false;
+	}
+
+
+	void del_menu_items() {
+		for (auto& mi : menu_items) {
+			::del_menu_item(mi.c_str());
+		}
+	}
+
+	static void unload_all() {
+		for (auto& kvp : g_s_plugins) {
+			auto plugin = kvp.second;
+			plugin->del_menu_items();
+			msg("unloading %s\n", plugin->get_name().c_str());
+			plugin->destroy_cb();
+		}
+	}
+
+	void push_undo_action(patch_t x) {
+		undo_stack.push(x);
+		// Clear redo actions so we overwrote the previous action
+		clear_redo_actions();
+	}
+	void push_redo_action(patch_t x) {
+		redo_stack.push(x);
+	}
+	
+	void clear_redo_actions() { clear_stack(redo_stack); }
+	void clear_undo_actions() { clear_stack(undo_stack); }
+
+	patch_t* get_undo_action() {
+		if (undo_stack.empty()) return nullptr;
+		patch_t ret = undo_stack.top();
+		undo_stack.pop();
+		return &ret;
+	}
+
+	patch_t* get_redo_action() {
+		if (redo_stack.empty()) return nullptr;
+		patch_t ret = redo_stack.top();
+		redo_stack.pop();
+		return &ret;
+	}
 private:
 	static std::unordered_map<HMODULE, OllyPlugin*> g_s_plugins;
 	std::string name;
+	std::list<std::string> menu_items;
+
+	std::stack<patch_t> undo_stack;
+	std::stack<patch_t> redo_stack;
+
+	void clear_stack(std::stack<patch_t>& stack) {
+		while (!stack.empty()) {
+			patch_t patch = stack.top();
+			stack.pop();
+
+			qfree(patch.data);
+		}
+	}
 
 	ODBG_Plugindata data_cb;
 	ODBG_Plugininit init_cb;
