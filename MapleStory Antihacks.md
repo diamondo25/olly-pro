@@ -68,7 +68,8 @@ The following code is a snippet from the UnVirtualizer. Note the two dwords bein
 ```
 
 `sub_4a7ee0` will check the the following:
-- `0x19dea1bd` will be xorred with another const value, resulting in `0x2010`
+1. `0x19dea1bd` will be xorred with another const value, resulting in `0x2010`
+2. `0xbe02ff0a` will be xorred with another const value, resulting in `0x1022`
 
 
 These are usually found before a packets gets sent, most of the times it will be attack packets.
