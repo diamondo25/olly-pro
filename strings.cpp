@@ -97,10 +97,10 @@ bool __stdcall cb_menu_plugin(void* ud) {
 		if (mii->action == -1) {
 			auto patch = op->get_undo_action();
 			if (patch != nullptr) {
-				Writememory(patch->data, patch->ea, patch->data_len, patch->mode | MM_REVERT_PATCH);
-
 				// Focus on part of screen
 				jumpto(patch->ea);
+
+				Writememory(patch->data, patch->ea, patch->data_len, patch->mode | MM_REVERT_PATCH);
 			}
 			else {
 				msg("No patch to revert.\n");
@@ -109,10 +109,10 @@ bool __stdcall cb_menu_plugin(void* ud) {
 		else if (mii->action == -2) {
 			auto patch = op->get_redo_action();
 			if (patch != nullptr) {
-				Writememory(patch->data, patch->ea, patch->data_len, patch->mode | MM_REDO_PATCH);
-
 				// Focus on part of screen
 				jumpto(patch->ea);
+
+				Writememory(patch->data, patch->ea, patch->data_len, patch->mode | MM_REDO_PATCH);
 			}
 			else {
 				msg("No patch to redo.\n");

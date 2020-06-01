@@ -2,6 +2,26 @@
 #include "OllyPlugin.h"
 #include <list>
 
+struct table_info {
+	// Name of the window, required for refresh_chooser
+	std::string name;
+
+	// Name that is used w/ pluginclass
+	std::string winclass;
+};
+
+std::unordered_map<t_table*, table_info> t_table_instances{};
+std::unordered_map<std::string, WNDPROC> pluginclass_map{};
+
+static bool progress_bar_open = false;
+
+static void close_progress_bar() {
+	if (!progress_bar_open) return;
+	hide_wait_box();
+	progress_bar_open = false;
+}
+
+
 // Fix for missing Isprefix inside Plugin.h, but exported by olly inside the Ollydbg.def file
 extc void cdecl Isprefix(void) {}
 
@@ -63,6 +83,7 @@ extc void    cdecl Message(ulong addr, char* format, ...) {
 	va_start(va, format);
 	vmsg(format, va);
 	msg("\n");
+	close_progress_bar();
 }
 /*
 Displays message on the bottom of main OllyDbg window. If format is NULL, currently displayed message will be removed. Call to Infoline removes flash and progress bar from the bottom line.
@@ -79,6 +100,7 @@ extc void    cdecl Infoline(char* format, ...) {
 	va_start(va, format);
 	vmsg(format, va);
 	msg("\n");
+	close_progress_bar();
 }
 /*
 Displays progress bar on the bottom of main OllyDbg window. Bar will contain formatted text with attached percent of execution. Formatted text may contain dollar sign '$', in this case persent of execution, enclosed in dashes, is inserted instead of dollra sign. If promille is 0, function closes progress bar restores previously displayed message. Calls to Message, Infoline and Flash also will close progress bar.
@@ -109,6 +131,20 @@ extc void    cdecl Progress(int promille, char* format, ...) {
 	msg("[%s] ", stars);
 	vmsg(format, va);
 	msg("\n");
+
+	if (promille == 0) {
+		close_progress_bar();
+	}
+	else {
+		if (!progress_bar_open) {
+			show_wait_box_v(format, va);
+			progress_bar_open = true;
+		}
+		else {
+			replace_wait_box_v(format, va);
+		}
+
+	}
 }
 /*
 Displays highlighted message on the bottom of main OllyDbg window. This message automatically disappears in 500 milliseconds.
@@ -126,6 +162,7 @@ extc void    cdecl Flash(char* format, ...) {
 	msg("[flash] ");
 	vmsg(format, va);
 	msg("\n");
+	close_progress_bar();
 }
 
 
@@ -230,6 +267,10 @@ destfunc - pointer to function that is called for each element being removed fro
 */
 extc int     cdecl Createsorteddata(t_sorted* sd, char* name, int itemsize,
 	int nmax, SORTFUNC* sortfunc, DESTFUNC* destfunc) {
+	if (sd == nullptr) {
+		msg("Createsorteddata sd == null\n");
+		return 0;
+	}
 
 	if (name != nullptr) {
 		strncpy_s(sd->name, name, strlen(name));
@@ -240,18 +281,21 @@ extc int     cdecl Createsorteddata(t_sorted* sd, char* name, int itemsize,
 	sd->nmax = nmax;
 	sd->sortfunc = sortfunc;
 	sd->destfunc = destfunc;
+	sd->itemsize = itemsize;
 
 	if (sd->data != nullptr) {
 		qfree(sd->data);
 	}
-	
-	sd->data = (void**)qalloc_or_throw(sd->nmax * sizeof(void*));
-	sd->itemsize = itemsize;
+
+	sd->data = (uint8*)qalloc_or_throw(sd->nmax * sd->itemsize);
 
 	return 0;
 }
 extc void    cdecl Destroysorteddata(t_sorted* sd) {
-	if (sd == nullptr) return;
+	if (sd == nullptr) {
+		msg("Destroysorteddata sd == null\n");
+		return;
+	}
 	if (sd->data != nullptr) {
 		qfree(sd->data);
 		sd->data = nullptr;
@@ -265,6 +309,7 @@ int compare_sorteddata(void* context, const void* a, const void* b) {
 	auto sd = (t_sorted*)context;
 	auto sha = (t_sortheader*)a;
 	auto shb = (t_sortheader*)b;
+
 	if (sd->sortfunc == AUTOARRANGE) {
 		// Sort on address
 		return sha->addr - shb->addr;
@@ -287,25 +332,32 @@ item - pointer to new element.
 */
 extc void    cdecl* Addsorteddata(t_sorted* sd, void* item) {
 	if (sd == nullptr) {
+		warning("Addsorteddata sd == null\n");
+		return (void*)0;
+	}
+	if (item == nullptr) {
+		warning("Addsorteddata item == null\n");
 		return (void*)0;
 	}
 
-	
+	t_sortheader* sh = (t_sortheader*)item;
+
+
 	// Size up the array if needed
 	if (sd->n == sd->nmax) {
 		sd->nmax = qmax(sd->nmax * 2, 32);
-		sd->data = (void**)qrealloc_or_throw(sd->data, sd->nmax * sizeof(void*));
+		sd->data = (uint8*)qrealloc_or_throw(sd->data, sd->nmax * sd->itemsize);
 	}
 
-	((void**)sd->data)[sd->n] = item;
+	msg("Addsorteddata %d addr %08X %d\n", sd->n, sh->addr, sh->size);
 
-	void* ret = &((void**)sd->data)[sd->n];
+	memcpy_s(sd->get_entry_data(sd->n), sd->itemsize, sh, sd->itemsize);
 
 	sd->n++;
 
-	qsort_s(sd->data, sd->n, sizeof(void*), compare_sorteddata, sd);
-	
-	return ret;
+	qsort_s(sd->data, sd->n, sd->itemsize, compare_sorteddata, sd);
+
+	return sd->get_entry_data(sd->n);
 }
 /*
 Deletes element which begins exactly at specified address from sorted data.
@@ -321,13 +373,13 @@ addr - address of element.
 */
 extc void    cdecl Deletesorteddata(t_sorted* sd, ulong addr) {
 	if (sd == nullptr) {
+		warning("Deletesorteddata sd == null\n");
 		return;
 	}
 
 	int pos = -1;
-	t_sortheader** arr = (t_sortheader**)sd->data;
 	for (int i = 0; i < sd->n; i++) {
-		auto sh = arr[i];
+		auto sh = sd->get_entry_data(i);
 		if (sh->addr == addr) {
 			pos = i;
 			break;
@@ -344,9 +396,9 @@ extc void    cdecl Deletesorteddata(t_sorted* sd, ulong addr) {
 		sd->n--;
 		return;
 	}
-
+	msg("memmove of deletesorteddata pos %d\n", pos);
 	// Already sorted, so just move it move it to the left
-	memmove((void*)&sd->data[pos], (void*)&sd->data[pos+1], (sd->n - pos)*sizeof(void*));
+	memmove(sd->get_entry_data(pos), sd->get_entry_data(pos + 1), (sd->n - pos) * sd->itemsize);
 }
 /*Deletes all elements which contain at least 1 address within the specified range from the table of sorted data.
 
@@ -364,14 +416,14 @@ addr1 - end of address range (not included).
 extc void    cdecl Deletesorteddatarange(t_sorted* sd, ulong addr0, ulong addr1) {
 	// Same as Deletesorteddata, but then delete a chunk
 	if (sd == nullptr) {
+		warning("Deletesorteddatarange sd == null\n");
 		return;
 	}
 
 	int startpos = -1;
 	int endpos = -1;
-	t_sortheader** arr = (t_sortheader**)sd->data;
 	for (int i = 0; i < sd->n; i++) {
-		auto sh = arr[i];
+		auto sh = sd->get_entry_data(i);
 		if (addr0 >= sh->addr &&
 			sh->addr + sh->size < addr1) {
 			if (startpos == -1) {
@@ -391,9 +443,9 @@ extc void    cdecl Deletesorteddatarange(t_sorted* sd, ulong addr0, ulong addr1)
 		sd->n = startpos - 1;
 		return;
 	}
-
+	msg("memmove of Deletesorteddatarange pos %d - %d\n", startpos, endpos);
 	// Already sorted, so just move it move it to the left
-	memmove((void*)&sd->data[startpos], (void*)&sd->data[endpos], (sd->n - endpos)*sizeof(void*));
+	memmove(sd->get_entry_data(startpos), sd->get_entry_data(endpos), (sd->n - endpos) * sd->itemsize);
 }
 extc int     cdecl Deletenonconfirmedsorteddata(t_sorted* sd) { return 0; }
 extc void* cdecl Findsorteddata(t_sorted* sd, ulong addr) { return 0; }
@@ -402,13 +454,38 @@ extc void* cdecl Findsorteddatarange(t_sorted* sd, ulong addr0, ulong addr1) {
 }
 extc int     cdecl Findsorteddataindex(t_sorted* sd, ulong addr0, ulong addr1) { return 0; }
 extc int     cdecl Sortsorteddata(t_sorted* sd, int sort) { return 0; }
-extc void* cdecl Getsortedbyselection(t_sorted* sd, int index) { return 0; }
+/*Returns pointer to element with specified index in sorted data sorted by actual criterium, or NULL on error. If necessary, function actualizes associated index table, so preliminary call to Sortsorteddata is not necessary. Function is very useful for extraction of selected element in table windows.
+
+void* Getsortedbyselection(t_sorted *sd,int selection);
+
+Parameters:
+
+sd - pointer to descriptor of sorted data;
+
+selection - zero-based index in data sorted by selected sort criterium.
+
+*/
+extc void* cdecl Getsortedbyselection(t_sorted* sd, int index) {
+	return (void*)sd->get_entry_data(index);
+}
 extc void    cdecl Defaultbar(t_bar* pb) {}
 extc int     cdecl Tablefunction(t_table* pt,
 	HWND hw, UINT msg, WPARAM wp, LPARAM lp) {
 	return 0;
 }
-extc void    cdecl Painttable(HWND hw, t_table* pt, DRAWFUNC getline) {}
+extc void    cdecl Painttable(HWND hw, t_table* pt, DRAWFUNC getline) {
+	auto x = t_table_instances.find(pt);
+	if (x == t_table_instances.end()) {
+		msg("Painttable, table not found\n");
+		return;
+	}
+	msg("Painttable %08X %08X\n", getline, pt->drawfunc);
+	if (getline != nullptr) {
+		pt->drawfunc = getline;
+	}
+	refresh_chooser(x->second.name.c_str());
+}
+
 extc int     cdecl Gettableselectionxy(t_table* pt, int column, int* px, int* py) { return 0; }
 extc void    cdecl Selectandscroll(t_table* pt, int index, int mode) {}
 
@@ -572,7 +649,7 @@ extc t_memory* cdecl Findmemory(ulong addr) {
 
 
 	t_memory* ret = new t_memory();
-	strncpy_s(ret->sect, name.c_str(), name.length());
+	strncpy_s(ret->sect, name.c_str(), qmin(SHORTLEN - 1, name.length()));
 	ret->owner = 0;
 	ret->threadid = 0;
 	ret->copy = nullptr;
@@ -682,7 +759,7 @@ MM_SILENT	On error, don't display error message box
 extc ulong   cdecl Writememory(void* buf, ulong addr, ulong size, int mode) {
 	msg("Writememory %08x len %d mode %d\n", addr, size, mode);
 
-	
+
 	patch_t p{};
 	p.data = (uint8*)qalloc_or_throw(size);
 	p.data_len = size;
@@ -695,7 +772,7 @@ extc ulong   cdecl Writememory(void* buf, ulong addr, ulong size, int mode) {
 	else if ((mode & MM_REDO_PATCH) == 0) {
 		OllyPlugin::g_s_current_plugin->push_redo_action(p);
 	}
-	
+
 
 	patch_bytes(addr, buf, size);
 
@@ -735,7 +812,6 @@ extc t_module* cdecl Findmodule(ulong addr) {
 		get_segm_name(segm, (char*)sh[i].Name, ARRAYSIZE(sh[i].Name));
 		sh[i].VirtualAddress = segm->startEA - ret->base;
 		sh[i].Misc.VirtualSize = segm->endEA - segm->startEA;
-
 	}
 
 	ret->sect = sh;
@@ -807,9 +883,188 @@ extc HWND    cdecl Newtablewindow(t_table* pt, int nlines, int maxcolumns,
 	char* winclass, char* wintitle) {
 	return 0;
 }
+/*If window already exists, restores it and brings to the top. Otherwise, sets default appearance parameters and creates new window. If record with window's title already exists in ollydbg.ini, table has TABLE_SAVEPOS attribute and option "Restore windows position and appearance" is selected, restores old position, size and appearance. Returns pointer to window or NULL on error. Note that alternative function, Newtablewindow, neither restores window nor changes its appearance.
+
+HWND Quicktablewindow(t_table *pt,int nlines,int maxcolumns,char *winclass,char *wintitle);
+
+Parameters:
+
+pt - pointer to descriptor of table window;
+
+nlines - preferred number of visible lines;
+
+maxcolumns - preferred number of visible columns;
+
+winclass - name of registered window class (for example, obtained from call to Registerpluginclass);
+
+wintitle - window's title. If table has TABLE_SAVEPOS attribute, OllyDbg uses title to save and restore window's position and appearance.
+
+*/
 extc HWND    cdecl Quicktablewindow(t_table* pt, int nlines, int maxcolumns,
 	char* winclass, char* wintitle) {
-	return 0;
+	auto ti = table_info{};
+	ti.name = std::string{wintitle};
+	ti.winclass = std::string{winclass};
+	t_table_instances[pt] = ti;
+	msg("Quicktablewindow %d drawfunc %08X\n", pt, pt->drawfunc);
+
+	const auto windowClass = TEXT("OllyPro Quicktablewindow helper");
+
+	static bool classInitialized = false;
+
+	if (!classInitialized) {
+		classInitialized = true;
+
+		WNDCLASSEX wc;
+		// initialize wc
+		wc.cbSize = sizeof(WNDCLASSEX);
+		wc.style = 0;
+		wc.cbWndExtra = sizeof(char*) * 1; // Extra slots
+		wc.cbClsExtra = 0;
+		wc.hInstance = 0;
+		wc.hIcon = LoadIcon(NULL, IDI_APPLICATION);
+		wc.hIconSm = LoadIcon(NULL, IDI_APPLICATION);
+		wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+		wc.lpszClassName = windowClass;
+		wc.lpszMenuName = NULL;
+		wc.hbrBackground = (HBRUSH)GetStockObject(WHITE_BRUSH);
+
+		wc.lpfnWndProc = [](HWND hwnd, UINT wndMsg, WPARAM wParam, LPARAM lParam) -> LRESULT {
+			switch (wndMsg) {
+			case WM_CREATE:
+			{
+				// Store the class pointer in the window info
+				// We get it from the create struct
+				CREATESTRUCT* cs = (CREATESTRUCT*)lParam;
+				SetWindowLongPtr(hwnd, 0, (LONG_PTR)cs->lpCreateParams);
+				break;
+			}
+
+			case WM_SETFOCUS:
+			{
+				// Plugin wants us to show up. I say: refresh
+				auto table = (t_table*)GetWindowLongPtr(hwnd, 0);
+				Painttable(hwnd, table, table->drawfunc);
+				break;
+			}
+
+			default:
+				return DefWindowProc(hwnd, wndMsg, wParam, lParam);
+			}
+
+			return 0;
+		};
+
+		if (!RegisterClassEx(&wc)) {
+			error("Unable to register class! %d\n", GetLastError());
+			return 0;
+		}
+	}
+
+
+	HWND ret = CreateWindowEx(
+		WS_EX_NOACTIVATE,
+		windowClass,
+		TEXT(wintitle),
+		WS_DISABLED,
+		0, 0,
+		0, 0,
+		NULL,
+		NULL,
+		NULL,
+		pt // Passed to WM_CREATE under lParam's CREATESTRUCT object
+	);
+
+	if (ret == NULL) {
+		msg("CreateWindowEx failed with error code %d\n", GetLastError());
+	}
+
+	pt->hw = ret;
+
+	choose2(
+		(int)0, // flags
+		-1, -1,
+		-1, -1,
+
+		(void*)pt,
+		maxcolumns,
+		(const int*)&pt->bar.defdx,
+		// get row count / sizer
+		[](void* data) -> uint32 { return ((t_table*)data)->data.n; },
+		// get row / getl
+		[](void* data, uint32 row, char* const* arrptr) {
+
+		auto t = (t_table*)data;
+		int colcount = t->bar.nbar;
+		if (row == 0) {
+			// generate the column headers
+			for (int i = 0; i < colcount; i++) {
+				qstrncpy(arrptr[i], t->bar.name[i], MAXSTR);
+			}
+			return;
+		}
+
+		row -= 1;
+
+		char mask[TEXTLEN];
+		int select;
+		for (int col = 0; col < colcount; col++) {
+			auto rowdata = t->data.get_entry_data(row);
+			auto len = t->drawfunc(
+				arrptr[col],
+				mask,
+				&select,
+				rowdata,
+				col
+			);
+			msg("Trying to render %d %d %s len %d addr %08X\n", row, col, arrptr[col], len, rowdata->addr);
+		}
+
+	},
+		// Title
+		wintitle,
+		// Icon
+		-1,
+		// Selected line (deflt)
+		0,
+		nullptr, // delete
+		nullptr, // insert
+		nullptr, // update 
+		[](void* data, uint32 row) { msg("edit %d\n", row); }, // edit
+		// enter
+		[](void* data, uint32 row) {
+		msg("enter %d\n", row);
+		auto t = (t_table*)data;
+
+		t->data.selected = row;
+		
+		auto ti = t_table_instances.find(t);
+		if (ti == t_table_instances.end()) {
+			msg("Unable to find table instance\n");
+			return;
+		}
+
+		auto pc = pluginclass_map.find(ti->second.winclass);
+		if (pc == pluginclass_map.end()) {
+			msg("Unable to find plugin class\n");
+			return;
+		}
+
+		pc->second(t->hw, WM_KEYDOWN, 13, 0);
+	},
+		nullptr,
+		// popup_names
+		nullptr,
+		// get_icon
+		nullptr
+	);
+
+	// TODO: 
+	// maybe do some heuristics for a context menu
+	// maybe hook CreatePopupMenu, AppendMenu, DestroyMenu for figuring out which items
+	// to add with add_chooser_command()
+
+	return ret;
 }
 extc HWND    cdecl Createdumpwindow(char* name, ulong base, ulong size,
 	ulong addr, int type, SPECFUNC* specdump) {
@@ -1062,6 +1317,9 @@ extc int     cdecl Registerpluginclass(char* classname, char* iconname,
 	wc.lpszClassName = classname;
 
 	if (RegisterClassA(&wc)) {
+
+		pluginclass_map[std::string{classname}] = classproc;
+
 		return 0;
 	}
 

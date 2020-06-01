@@ -699,13 +699,18 @@ typedef struct t_sorted {              // Descriptor of sorted table
   ulong          seladdr;              // Base address of selected entry
   int            itemsize;             // Size of single entry
   ulong          version;              // Unique version of table
-  void*          *data;                // Entries, sorted by address
+  uint8          *data;                // Entries, sorted by address
   SORTFUNC       *sortfunc;            // Function which sorts data or NULL
   DESTFUNC       *destfunc;            // Destructor function or NULL
   int            sort;                 // Sorting criterium (column)
   int            sorted;               // Whether indexes are sorted
   int            *index;               // Indexes, sorted by criterium
   int            suppresserr;          // Suppress multiple overflow errors
+
+  t_sortheader* get_entry_data(int i) {
+      return (t_sortheader*)(data + (i * itemsize));
+  }
+
 } t_sorted;
 
 typedef struct t_table {               // Window with sorted data and bar

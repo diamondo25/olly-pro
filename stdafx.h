@@ -26,7 +26,7 @@
 #define MM_UNDOREDO_FLAG (MM_REDO_PATCH|MM_REVERT_PATCH)
 
 #if IDA610
-#define get_bytes(buf, buf_size, ea) get_many_bytes(ea, buf, buf_size)
+#define get_bytes(buf, buf_size, ea) (get_many_bytes(ea, buf, buf_size) == 0 ? 0 : buf_size)
 #define put_bytes put_many_bytes
 #define patch_bytes patch_many_bytes
 
@@ -34,6 +34,12 @@ void print_insn_mnem(qstring * out, ea_t ea);
 ssize_t get_segm_class(qstring* out, const segment_t* seg);
 ssize_t idaapi get_segm_name(qstring* out, const segment_t* seg);
 #endif
+
+
+AS_PRINTF(1, 0) inline void replace_wait_box_v(const char *format, va_list va)
+{
+  callui(ui_mbox, mbox_replace, format, va);
+}
 
 #include "Plugin.h"
 
